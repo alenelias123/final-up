@@ -3,14 +3,14 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Asset, Endpoint, Finding, Scan, ScanStatus, Target
+from app.models import Asset, Endpoint, Finding, Scan, ScanMode, ScanStatus, Target
 from app.utils.crypto import encrypt_secret, redact_secret
 
 router = APIRouter()
@@ -29,15 +29,28 @@ class ScanConfig(BaseModel):
     max_depth: int = Field(default=2, ge=1, le=5)
 
 
+class CompanyProfile(BaseModel):
+    """Enterprise-mode company profile used to tailor the scan."""
+    company_name: Optional[str] = None
+    industry: Optional[str] = None  # e.g. "healthcare", "finance", "ecommerce"
+    tech_stack: Optional[list[str]] = Field(default_factory=list)  # e.g. ["nginx", "django", "postgres"]
+    known_asset_ranges: Optional[list[str]] = Field(default_factory=list)  # e.g. ["192.168.1.0/24"]
+    compliance_frameworks: Optional[list[str]] = Field(default_factory=list)  # e.g. ["PCI-DSS", "HIPAA", "SOC2"]
+    min_severity_filter: Optional[str] = None  # only report findings >= this severity
+
+
 class CreateScanRequest(BaseModel):
     url: str
+    scan_mode: Literal["pentest", "enterprise"] = "pentest"
     scan_config: Optional[ScanConfig] = None
     auth_config: Optional[AuthConfig] = None
+    company_profile: Optional[CompanyProfile] = None
 
 
 class ScanResponse(BaseModel):
     scan_id: int
     status: str
+    scan_mode: str
     progress: int
     current_step: str
     posture_score: Optional[float]
@@ -107,9 +120,16 @@ def create_scan(body: CreateScanRequest, db: Session = Depends(get_db)):
         ac = body.auth_config.model_dump(exclude_none=True)
         sc["auth_config"] = encrypt_secret(json.dumps(ac))
 
+    # Store company profile (enterprise mode)
+    company_profile_json = "{}"
+    if body.company_profile:
+        company_profile_json = json.dumps(body.company_profile.model_dump(exclude_none=True))
+
     scan = Scan(
         target_id=target.id,
         scan_config_json=json.dumps(sc),
+        scan_mode=ScanMode(body.scan_mode),
+        company_profile_json=company_profile_json,
         status=ScanStatus.pending,
     )
     db.add(scan)
@@ -135,6 +155,7 @@ def get_scan(scan_id: int, db: Session = Depends(get_db)):
     return ScanResponse(
         scan_id=scan.id,
         status=scan.status.value,
+        scan_mode=scan.scan_mode.value if scan.scan_mode else "pentest",
         progress=scan.progress or 0,
         current_step=scan.current_step or "queued",
         posture_score=scan.posture_score,
@@ -242,6 +263,7 @@ def get_report(scan_id: int, db: Session = Depends(get_db)):
         "scan_id": scan_id,
         "target": target.root_domain if target else None,
         "status": scan.status.value,
+        "scan_mode": scan.scan_mode.value if scan.scan_mode else "pentest",
         "posture_score": scan.posture_score,
         "started_at": scan.started_at,
         "finished_at": scan.finished_at,

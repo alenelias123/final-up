@@ -31,6 +31,11 @@ class ScanStatus(str, enum.Enum):
     failed = "failed"
 
 
+class ScanMode(str, enum.Enum):
+    pentest = "pentest"
+    enterprise = "enterprise"
+
+
 class Severity(str, enum.Enum):
     info = "info"
     low = "low"
@@ -68,7 +73,9 @@ class Scan(Base):
     id = Column(Integer, primary_key=True)
     target_id = Column(Integer, ForeignKey("targets.id"), nullable=False)
     status = Column(Enum(ScanStatus), default=ScanStatus.pending, nullable=False)
+    scan_mode = Column(Enum(ScanMode), default=ScanMode.pentest, nullable=False)
     scan_config_json = Column(Text, default="{}")
+    company_profile_json = Column(Text, default="{}")
     started_at = Column(DateTime(timezone=True), nullable=True)
     finished_at = Column(DateTime(timezone=True), nullable=True)
     posture_score = Column(Float, nullable=True)

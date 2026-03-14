@@ -572,9 +572,10 @@ def run_scan(self, scan_id: int):
     """
     from app.database import SessionLocal
     from app.models import (
-        Asset, AssetType, Artifact, Endpoint, Finding, Scan, ScanStatus
+        Asset, AssetType, Artifact, Endpoint, Finding, Scan, ScanMode, ScanStatus
     )
     from app.utils.crypto import decrypt_secret
+    from app.utils.enterprise import apply_enterprise_tailoring
 
     db = SessionLocal()
     try:
@@ -598,6 +599,15 @@ def run_scan(self, scan_id: int):
                 auth_config = None
 
         max_depth = int(config.get("max_depth", settings.crawl_max_depth))
+
+        # Load enterprise company profile
+        scan_mode = scan.scan_mode.value if scan.scan_mode else "pentest"
+        company_profile: dict = {}
+        if scan_mode == "enterprise" and scan.company_profile_json:
+            try:
+                company_profile = json.loads(scan.company_profile_json)
+            except Exception:
+                company_profile = {}
 
         def _update(step: str, pct: int):
             scan.current_step = step
@@ -699,6 +709,11 @@ def run_scan(self, scan_id: int):
         _update("correlating_findings", 80)
         findings_data = correlate_findings(observations, scan_id)
 
+        # Enterprise mode: apply tailoring (severity boosts, compliance context, filtering)
+        if scan_mode == "enterprise" and company_profile:
+            _update("applying_enterprise_tailoring", 85)
+            findings_data = apply_enterprise_tailoring(findings_data, company_profile)
+
         # Persist findings
         for fd in findings_data:
             # Scrub cookies/auth from evidence
@@ -736,6 +751,7 @@ def run_scan(self, scan_id: int):
                 "endpoints_count": len(crawl_endpoints),
                 "hosts_count": len(all_hosts),
                 "live_hosts_count": len(live_hosts),
+                "scan_mode": scan_mode,
             }),
         )
         db.add(artifact)

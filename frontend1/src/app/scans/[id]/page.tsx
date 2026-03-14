@@ -8,6 +8,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 type ScanStatus = {
   scan_id: number;
   status: string;
+  scan_mode: string;
   progress: number;
   current_step: string;
   posture_score: number | null;
@@ -107,7 +108,7 @@ function EvidenceDrawer({ finding, onClose }: { finding: Finding; onClose: () =>
         {finding.recommendation && (
           <div className="mb-4">
             <div className="text-xs font-semibold text-gray-400 uppercase mb-1">Recommendation</div>
-            <div className="bg-gray-800 rounded px-3 py-2 text-gray-200 text-sm">{finding.recommendation}</div>
+            <div className="bg-gray-800 rounded px-3 py-2 text-gray-200 text-sm whitespace-pre-wrap">{finding.recommendation}</div>
           </div>
         )}
         {finding.fingerprint_hash && (
@@ -189,6 +190,17 @@ export default function ScanDetailPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Scan #{scan.scan_id}</h1>
           <div className="text-gray-400 text-sm mt-1">{scan.target}</div>
+          <div className="mt-2">
+            {scan.scan_mode === "enterprise" ? (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-900/60 text-blue-300 border border-blue-700">
+                🏢 Enterprise Mode
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-900/60 text-red-300 border border-red-700">
+                🔴 Pentest Mode
+              </span>
+            )}
+          </div>
         </div>
         <div className="text-right">
           <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
